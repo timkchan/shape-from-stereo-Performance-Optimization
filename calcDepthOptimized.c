@@ -26,3 +26,4 @@ void calcDepthOptimized(float *depth, float *left, float *right, int imageWidth,
 {
 	calcDepthNaive(depth, left, right, imageWidth, imageHeight, featureWidth, featureHeight, maximumDisplacement);
 }
+//test git
