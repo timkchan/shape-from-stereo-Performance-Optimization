@@ -1,4 +1,4 @@
-//2x
+//SSE
 // CS 61C Fall 2015 Project 4
 
 // include SSE intrinsics
@@ -25,10 +25,11 @@
 
 void calcDepthOptimized(float *depth, float *left, float *right, int imageWidth, int imageHeight, int featureWidth, int featureHeight, int maximumDisplacement)
 {
-	/* The two outer for loops iterate through each pixel */
+
 	int ih_minus_fh = imageHeight - featureHeight;
 	int iw_minus_fw = imageWidth - featureWidth;
 
+	/* The two outer for loops iterate through each pixel */
 	#pragma omp parallel for collapse(2)
 	for (int y = 0; y < imageHeight; y++) {
 		for (int x = 0; x < imageWidth; x++) {	
@@ -39,18 +40,6 @@ void calcDepthOptimized(float *depth, float *left, float *right, int imageWidth,
 		}
 	}
 
-
-
-
-
-
-
-
-
-
-
-
-
 	#pragma omp parallel for collapse(2)
 	for (int y = featureHeight; y < ih_minus_fh; y++)
 	{
@@ -60,9 +49,7 @@ void calcDepthOptimized(float *depth, float *left, float *right, int imageWidth,
 			float minimumSquaredDifference = -1;
 			int minimumDy = 0;
 			int minimumDx = 0;
-			int x_minus_fh = x - featureWidth;
-			int x_minus_fw = x - featureWidth;
-			
+
 			/* Iterate through all feature boxes that fit inside the maximum displacement box. 
 			   centered around the current pixel. */
 			for (int dy = -maximumDisplacement; dy <= maximumDisplacement; dy++)
@@ -70,49 +57,56 @@ void calcDepthOptimized(float *depth, float *left, float *right, int imageWidth,
 				for (int dx = -maximumDisplacement; dx <= maximumDisplacement; dx++)
 				{
 					/* Skip feature boxes that dont fit in the displacement box. */
-					if (y + dy - featureHeight < 0 || y + dy + featureHeight >= imageHeight || x_minus_fh + dx  < 0 || x + dx + featureWidth >= imageWidth)
+					if (y + dy - featureHeight < 0 || y + dy + featureHeight >= imageHeight || x + dx - featureWidth < 0 || x + dx + featureWidth >= imageWidth)
 					{
 						continue;
 					}
 
+					
 					float squaredDifference = 0;
-
-					/* Sum the squared difference within a box of +/- featureHeight and +/- featureWidth. */
-
-    				float difference = 0.0;
+					float difference = 0.0;
     				int leftRX = 0;
 					int rightRX = 0;
-					
+					__m128 squaredDifferenceX = _mm_setzero_ps();
 
+					/* Sum the squared difference within a box of +/- featureHeight and +/- featureWidth. */
 					for (int boxY = -featureHeight; boxY <= featureHeight; boxY++)
 					{
 						/* No. of roll (y) we are at plus offsets. */
-						int left_roll = (y + boxY) * imageWidth + x_minus_fh;
-						int right_roll = (y + dy + boxY) * imageWidth + x_minus_fw + dx;
+						int left_roll = (y + boxY) * imageWidth - featureWidth + x;
+						int right_roll = (y + dy + boxY) * imageWidth - featureWidth + x + dx;
 
-						for (int boxX = 0; boxX < featureWidth  * 2; boxX += 2)	//f/2*4 = 2f/4*4
+						
+						__m128 sumX = _mm_setzero_ps();
+						for (int boxX = 0; boxX < featureWidth / 2 * 4; boxX += 4)	//f/2*4 = 2f/4*4
 						{
 							leftRX = left_roll + boxX;
 							rightRX = right_roll + boxX;
 
+							__m128 left0 = _mm_loadu_ps ((left + leftRX));
+							__m128 right0 =  _mm_loadu_ps ((right + rightRX));
+							__m128 difference = _mm_sub_ps (left0, right0);
 
-							difference = left[leftRX] - right[rightRX];
-							squaredDifference += difference * difference;
-
-							leftRX ++;
-							rightRX ++;
-
-							difference = left[leftRX] - right[rightRX];
-							squaredDifference += difference * difference;
+							difference = _mm_mul_ps (difference, difference);
+							sumX = _mm_add_ps(sumX, difference);
 						}
+						squaredDifferenceX = _mm_add_ps(sumX, squaredDifferenceX);
+
 
 					    // tail case
-						for (int boxX = featureWidth * 2; boxX <= featureWidth * 2; boxX++)
+						for (int boxX = featureWidth / 2 * 4; boxX <= featureWidth * 2; boxX++)
 						{
 							difference = left[left_roll + boxX] - right[right_roll + boxX];
 							squaredDifference += difference * difference;
 						}
+
 					}
+					float temp[4];
+					_mm_storeu_ps (temp, squaredDifferenceX);
+				    for (int i = 0; i < 4; i++){
+				    	squaredDifference += temp[i];
+				    }
+					
 
 					/* 
 					Check if you need to update minimum square difference. 
@@ -134,7 +128,6 @@ void calcDepthOptimized(float *depth, float *left, float *right, int imageWidth,
 			Set the value in the depth map. 
 			If max displacement is equal to 0, the depth value is just 0.
 			*/
-			float displacement = displacementNaive(minimumDx, minimumDy);
 			if (minimumSquaredDifference != -1)
 			{
 				if (maximumDisplacement == 0)
@@ -143,7 +136,7 @@ void calcDepthOptimized(float *depth, float *left, float *right, int imageWidth,
 				}
 				else
 				{
-					depth[y * imageWidth + x] = displacement;
+					depth[y * imageWidth + x] = displacementNaive(minimumDx, minimumDy);
 				}
 			}
 			else
