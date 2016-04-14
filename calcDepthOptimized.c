@@ -70,18 +70,21 @@ void calcDepthOptimized(float *depth, float *left, float *right, int imageWidth,
 					__m128 squaredDifferenceX = _mm_setzero_ps();
 
 					/* Sum the squared difference within a box of +/- featureHeight and +/- featureWidth. */
-					for (int boxY = -featureHeight; boxY <= featureHeight; boxY++)
+					for (int boxX = 0; boxX < featureWidth / 2 * 4; boxX += 4)	//f/2*4 = 2f/4*4
 					{
-						/* No. of roll (y) we are at plus offsets. */
-						int left_roll = (y + boxY) * imageWidth - featureWidth + x;
-						int right_roll = (y + dy + boxY) * imageWidth - featureWidth + x + dx;
 
+
+						/* No. of roll (y) we are at plus offsets. */
+							int left_roll = (y - featureHeight) * imageWidth - featureWidth + x + boxX;
+							int right_roll = (y + dy - featureHeight) * imageWidth - featureWidth + x + dx + boxX;
 						
 						__m128 sumX = _mm_setzero_ps();
-						for (int boxX = 0; boxX < featureWidth / 2 * 4; boxX += 4)	//f/2*4 = 2f/4*4
+						for (int boxY = 0; boxY <= 2 * featureHeight; boxY++)
 						{
-							leftRX = left_roll + boxX;
-							rightRX = right_roll + boxX;
+
+
+							leftRX = left_roll + boxY * imageWidth;
+							rightRX = right_roll + boxY * imageWidth;
 
 							__m128 left0 = _mm_loadu_ps ((left + leftRX));
 							__m128 right0 =  _mm_loadu_ps ((right + rightRX));
@@ -93,14 +96,26 @@ void calcDepthOptimized(float *depth, float *left, float *right, int imageWidth,
 						squaredDifferenceX = _mm_add_ps(sumX, squaredDifferenceX);
 
 
-					    // tail case
-						for (int boxX = featureWidth / 2 * 4; boxX <= featureWidth * 2; boxX++)
+
+
+					}
+					// tail case
+					for (int boxX = featureWidth / 2 * 4; boxX <= featureWidth * 2; boxX++)
+					{
+						for (int boxY = 0; boxY <= 2 * featureHeight; boxY++)
 						{
+							int left_roll = (y + boxY -featureHeight) * imageWidth - featureWidth + x;
+							int right_roll = (y + dy + boxY -featureHeight) * imageWidth - featureWidth + x + dx;
 							difference = left[left_roll + boxX] - right[right_roll + boxX];
 							squaredDifference += difference * difference;
 						}
-
 					}
+
+
+
+
+
+
 					float temp[4];
 					_mm_storeu_ps (temp, squaredDifferenceX);
 				    for (int i = 0; i < 4; i++){
